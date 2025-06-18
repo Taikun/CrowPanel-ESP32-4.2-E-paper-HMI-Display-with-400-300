@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Arduino_JSON.h>
+#include "time.h"
 #include "EPD.h"        // Librería Elecrow E-paper
 #include "EPD_GUI.h"
 #include "pic.h"
@@ -59,6 +60,22 @@ long getJsonLong(JSONVar parent, const char* field) {
   return s.toInt() > 0 ? s.toInt() : atol(s.c_str());
 }
 
+// Función auxiliar para comprobar si un timestamp (segundos) es "hoy"
+bool isToday(long timestamp) {
+  time_t now;
+  struct tm *now_tm;
+  time(&now);
+  now_tm = localtime(&now);
+
+  time_t ts_time = (time_t)timestamp;   // <-- Conversión explícita
+  struct tm ts_tm;
+  localtime_r(&ts_time, &ts_tm);        // <-- Usar dirección de time_t
+
+  return (now_tm->tm_year == ts_tm.tm_year) &&
+         (now_tm->tm_mon  == ts_tm.tm_mon) &&
+         (now_tm->tm_mday == ts_tm.tm_mday);
+}
+
 void obtenerFechaHoraCiudad() {
   // Usamos la hora del propio sistema del ESP32, que está en UTC (no en hora local)
   time_t now;
@@ -102,8 +119,8 @@ void UI_weather_forecast()
 
   // Iconos y campos meteorológicos
   EPD_ShowPicture(7, 10, 184, 208, Weather_Num[weather_flag], WHITE);
-  EPD_ShowPicture(205, 120, 184, 88, gImage_hum, WHITE);
-  EPD_ShowPicture(10, 185, 144, 40, gImage_tem, WHITE); // icono de temperatura, ajusta Y si hace falta
+  // EPD_ShowPicture(205, 120, 184, 88, gImage_hum, WHITE);
+  // EPD_ShowPicture(10, 185, 144, 40, gImage_tem, WHITE); // icono de temperatura, ajusta Y si hace falta
 
   // Líneas divisorias
   EPD_DrawLine(0, 230, 400, 230, BLACK);
@@ -131,16 +148,44 @@ void UI_weather_forecast()
   Serial.println(buffer);  // Para asegurar qué texto llega
   EPD_ShowString(50, 190, buffer, 24, BLACK); // texto desplazado a la derecha
 
+  // Temperatura actual
+  // Icono y texto de temperatura actual arriba a la derecha
+  Serial.print("Valor bruto de temperature: '");
+  Serial.print(temperature);
+  Serial.println("' (longitud: " + String(temperature.length()) + ")");
+
+  for (size_t i = 0; i < temperature.length(); i++) {
+    Serial.print("[");
+    Serial.print(i);
+    Serial.print("]=");
+    Serial.print((int)temperature[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+  char buffer_actual[20];
+  memset(buffer_actual, 0, sizeof(buffer_actual));
+  snprintf(buffer_actual, sizeof(buffer_actual), "%s C", temperature.c_str());
+  // Icono (ajusta las X/Y si lo quieres más pegado a la esquina)
+  Serial.print("Buffer actual para pintar: '");
+  Serial.print(buffer_actual);
+  Serial.println("'");
+
+  EPD_ShowPicture(210, 15, 24, 24, epd_bitmap_temperature_24, BLACK);
+  EPD_ShowString(250, 15, buffer_actual, 24, BLACK);    // Fuente tamaño 24, igual que la máxima
+
   EPD_Display_Part(0, 0, EPD_W, EPD_H, ImageBW);
 
   EPD_Sleep();
 }
 
 // Obtener y procesar datos meteorológicos
+// usando la API de OpenWeatherMap
+// Obtener y procesar datos meteorológicos usando forecast
 void js_analysis()
 {
   if (WiFi.status() == WL_CONNECTED) {
-    String serverPath = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey + "&units=metric";
+    // 1. Usar la API de forecast para obtener máxima y mínima del día real
+    String serverPath = "http://api.openweathermap.org/data/2.5/forecast?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey + "&units=metric";
 
     do {
       jsonBuffer = httpGETRequest(serverPath.c_str());
@@ -154,24 +199,85 @@ void js_analysis()
       delay(2000);
     } while (httpResponseCode != 200);
 
-    // Info meteo principal
-    weather = String((const char*)myObject["weather"][0]["main"]);
-    temperature = String((const char*)myObject["main"]["temp"]);
-    humidity = String((const char*)myObject["main"]["humidity"]);
-    sea_level = String((const char*)myObject["main"]["sea_level"]);
-    wind_speed = String((const char*)myObject["wind"]["speed"]);
-    city_js = String((const char*)myObject["name"]);
-    temp_max = String((double)myObject["main"]["temp_max"], 1); // Un decimal
+    // Ejemplo de respuesta JSON de la API de forecast
+    /*
+    {
+      "city": {
+        "id": 2510911,
+        "name": "Seville",
+        "country": "ES",
+        "sunrise": 1750050166,
+        "sunset": 1750103194,
+        ...
+      },
+      "list": [
+        {
+          "dt": 1750027200,
+          "main": {
+            "temp": 30.5,
+            "temp_min": 29.0,
+            "temp_max": 33.0,
+            ...
+          },
+          "weather": [{"main": "Clear", ...}],
+          ...
+        },
+        ...
+      ]
+    }
+    */
 
-    Serial.print("Temp máxima: "); Serial.println(temp_max);
+    // Info meteo principal del primer elemento (momento actual aprox.)
+    JSONVar list = myObject["list"];
+    JSONVar first = list[0];
 
-    // Amanecer y ocaso (¡el truco infalible!)
-    JSONVar sysObj = myObject["sys"];
-    String sunriseStr = JSON.stringify(sysObj["sunrise"]);
-    String sunsetStr = JSON.stringify(sysObj["sunset"]);
+    weather = String((const char*)first["weather"][0]["main"]);
+    
+    double temp_value = (double)first["main"]["temp"];
+    temperature = String(temp_value, 1);
+    
+    humidity = String((double)first["main"]["humidity"], 0);
+    sea_level = String((double)first["main"]["sea_level"], 0);
+    wind_speed = String((double)first["wind"]["speed"], 1);
+    city_js = String((const char*)myObject["city"]["name"]);
+
+    // Calcular máxima y mínima del día recorriendo los datos de hoy
+    double tmax = -1000, tmin = 1000;
+    time_t now;
+    time(&now);
+    struct tm *now_tm = localtime(&now);
+
+    for (int i = 0; i < list.length(); i++) {
+      JSONVar entry = list[i];
+      long entryTime = atol(JSON.stringify(entry["dt"]).c_str());
+
+      time_t ts_time = (time_t)entryTime;
+      struct tm ts_tm;
+      localtime_r(&ts_time, &ts_tm);
+
+      // Solo cuenta los del mismo día
+      if (now_tm->tm_year == ts_tm.tm_year &&
+          now_tm->tm_mon  == ts_tm.tm_mon  &&
+          now_tm->tm_mday == ts_tm.tm_mday) {
+        double t = (double)entry["main"]["temp_max"];
+        double tminVal = (double)entry["main"]["temp_min"];
+        if (t > tmax) tmax = t;
+        if (tminVal < tmin) tmin = tminVal;
+      }
+    }
+    temp_max = String(tmax, 1);
+    String temp_min = String(tmin, 1);
+
+    Serial.print("Temp máxima del día: "); Serial.println(temp_max);
+    Serial.print("Temp mínima del día: "); Serial.println(temp_min);
+
+    // Amanecer y ocaso desde la sección city del forecast
+    JSONVar cityObj = myObject["city"];
+    String sunriseStr = JSON.stringify(cityObj["sunrise"]);
+    String sunsetStr  = JSON.stringify(cityObj["sunset"]);
 
     long sunrise_ts = sunriseStr.toInt() > 0 ? sunriseStr.toInt() : atol(sunriseStr.c_str());
-    long sunset_ts = sunsetStr.toInt() > 0 ? sunsetStr.toInt() : atol(sunsetStr.c_str());
+    long sunset_ts  = sunsetStr.toInt() > 0 ? sunsetStr.toInt() : atol(sunsetStr.c_str());
 
     Serial.print("DEBUG sunriseStr: "); Serial.println(sunriseStr);
     Serial.print("DEBUG sunsetStr: "); Serial.println(sunsetStr);
@@ -180,18 +286,16 @@ void js_analysis()
 
     // Suma offset horario manual
     sunrise_ts += OFFSET_HORARIO;
-    sunset_ts += OFFSET_HORARIO;
+    sunset_ts  += OFFSET_HORARIO;
 
     Serial.print("sunrise_ts tras sumar offset: ");
     Serial.println(sunrise_ts);
     Serial.print("sunset_ts tras sumar offset: ");
     Serial.println(sunset_ts);
 
-    // Conversión a struct tm para formatear la hora local
-    time_t sunrise_time = sunrise_ts;
-    time_t sunset_time = sunset_ts;
-
     // SOLUCIÓN: Procesar primero el amanecer y copiarlo inmediatamente
+    time_t sunrise_time = sunrise_ts;
+    time_t sunset_time  = sunset_ts;
     struct tm tm_sunrise, tm_sunset;
     struct tm *ptm_sunrise = gmtime(&sunrise_time);
     if (ptm_sunrise) {
@@ -208,7 +312,7 @@ void js_analysis()
     if (ptm_sunrise && ptm_sunset) {
         snprintf(sunriseBuffer, sizeof(sunriseBuffer), "%02d:%02d", tm_sunrise.tm_hour, tm_sunrise.tm_min);
         snprintf(sunsetBuffer, sizeof(sunsetBuffer), "%02d:%02d", tm_sunset.tm_hour, tm_sunset.tm_min);
-        
+
         Serial.print("Hora amanecer: "); Serial.println(sunriseBuffer);
         Serial.print("Hora ocaso: "); Serial.println(sunsetBuffer);
     } else {
