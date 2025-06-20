@@ -102,6 +102,8 @@ void mostrarPoolsPantalla() {
     int barraH = 10;
     int barraUsada = min((int)(barraW * (usedPercent / 100.0)), barraW);
 
+    Serial.printf("🧮 barraUsada: %d pixels of %d total\n", barraUsada, barraW);
+
     // 1. Dibuja toda la barra vacía (fondo blanco)
     for (int yline = barraY; yline < barraY + barraH; yline++) {
       for (int xline = barraX; xline < barraX + barraW; xline++) {
