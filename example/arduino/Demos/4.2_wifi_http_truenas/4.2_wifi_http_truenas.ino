@@ -63,86 +63,86 @@ void obtenerPools() {
 void mostrarPoolsPantalla() {
   Serial.println("🧭 Starting pool status rendering...");
   EPD_GPIOInit();
-  clear_all();
+  
+  clear_all(); 
+  
   EPD_Init_Fast(Fast_Seconds_1_5s);
 
   int y = 10;
 
+  // --- OPTIMIZACIÓN: Obtener datos de discos UNA SOLA VEZ ---
+  Serial.println("Fetching disk data once...");
+  JSONVar allDisks = JSON.parse(httpGETTrueNAS("disk"));
+  if (JSON.typeof(allDisks) == "undefined") {
+      Serial.println("❌ Error parsing JSON from /disk");
+  } else {
+      Serial.println("✅ Disk data fetched correctly.");
+  }
+
   for (int i = 0; i < pools.length(); i++) {
-    String poolName = pools[i]["name"];
-    String poolStatus = pools[i]["status"];
-    int poolId = (int)pools[i]["id"];
+    String poolName = (const char*)pools[i]["name"];
+    String poolStatus = (const char*)pools[i]["status"];
 
-    Serial.printf("📦 Pool %d: %s (Status: %s)\n", poolId, poolName.c_str(), poolStatus.c_str());
-
-    snprintf(buffer, sizeof(buffer), "Pool: %s [%s]", poolName.c_str(), poolStatus.c_str());
-    EPD_ShowString(10, y, buffer, 16, BLACK);
-    y += 20;
-
-    // Fetch full pool details
     double size = (double)pools[i]["size"];
     double allocated = (double)pools[i]["allocated"];
-
-    Serial.printf("📊 size: %.2f | allocated: %.2f\n", size, allocated);
-
     double usedPercent = 0.0;
     if (size > 0) {
       usedPercent = (allocated / size) * 100.0;
-    } else {
-      Serial.println("⚠️  Size is zero or undefined, skipping usage bar.");
     }
 
-    Serial.printf("✅ Used: %.2f%%\n", usedPercent);
+    Serial.printf("Pool: %s, Used: %.1f%%\n", poolName.c_str(), usedPercent);
 
-
-    // Draw usage bar (black)
     int barraX = 20;
-    int barraY = y;
+    int barraY = y + 20;
     int barraW = 360;
-    int barraH = 10;
-    int barraUsada = min((int)(barraW * (usedPercent / 100.0)), barraW);
+    int barraH = 15;
+    int barraUsadaW = min((int)(barraW * (usedPercent / 100.0)), barraW);
 
-    Serial.printf("🧮 barraUsada: %d pixels of %d total\n", barraUsada, barraW);
+    // 🖋️ Texto: nombre y estado
+    snprintf(buffer, sizeof(buffer), "Pool: %s [%s]", poolName.c_str(), poolStatus.c_str());
+    EPD_ShowString(10, y, buffer, 16, BLACK);
 
-    // 1. Dibuja toda la barra vacía (fondo blanco)
-    for (int yline = barraY; yline < barraY + barraH; yline++) {
-      for (int xline = barraX; xline < barraX + barraW; xline++) {
-        Paint_SetPixel(xline, yline, WHITE);
-      }
+    // --- LÓGICA DE DIBUJO CORREGIDA ---
+
+    // 1. 🧱 Dibuja el borde exterior de la barra (rectángulo VACÍO)
+    //    Usamos el modo 0 para que solo dibuje el contorno.
+    EPD_DrawRectangle(barraX, barraY, barraX + barraW, barraY + barraH, BLACK, 0);
+
+    // 2. ⬛ Dibuja la parte usada (rectángulo RELLENO)
+    //    Usamos el modo 1 para rellenar.
+    //    Solo dibujamos si el ancho es mayor que 0.
+    if (barraUsadaW > 0) {
+      EPD_DrawRectangle(barraX, barraY, barraX + barraUsadaW, barraY + barraH, BLACK, 1);
     }
-
-    // 2. Dibuja solo la parte usada (relleno negro proporcional)
-    for (int yline = barraY; yline < barraY + barraH; yline++) {
-      for (int xline = barraX; xline < barraX + barraUsada; xline++) {
-        Paint_SetPixel(xline, yline, BLACK);
-      }
-    }
-
-    // 3. Dibuja marco opcional
-    EPD_DrawRectangle(barraX, barraY, barraX + barraW, barraY + barraH, BLACK, DOT_PIXEL_1X1);
     
-    y += 15;
+    // --- FIN DE LA LÓGICA CORREGIDA ---
 
+    // 📊 Texto porcentaje
+    y = barraY + barraH + 5;
     snprintf(buffer, sizeof(buffer), "Used: %.1f%%", usedPercent);
     EPD_ShowString(barraX, y, buffer, 16, BLACK);
     y += 20;
 
-    // Get disk list (once)
-    JSONVar allDisks = JSON.parse(httpGETTrueNAS("disk"));
-    for (int j = 0; j < allDisks.length(); j++) {
-      if ((String)allDisks[j]["pool"] == poolName) {
-        String diskName = allDisks[j]["name"];
-        int temp = (int)allDisks[j]["temperature"];
-        snprintf(buffer, sizeof(buffer), "  %s - Temp: %d C", diskName.c_str(), temp);
-        EPD_ShowString(20, y, buffer, 16, BLACK);
-        y += 20;
-      }
+    // 💽 Temperaturas de discos (usando los datos ya descargados)
+    if (JSON.typeof(allDisks) != "undefined") {
+        for (int j = 0; j < allDisks.length(); j++) {
+          if (allDisks[j]["pool"] != NULL && (String)allDisks[j]["pool"] == poolName) {
+            String diskName = (const char*)allDisks[j]["name"];
+            int temp = (int)allDisks[j]["temperature"];
+            snprintf(buffer, sizeof(buffer), "  %s - Temp: %d C", diskName.c_str(), temp);
+            EPD_ShowString(20, y, buffer, 16, BLACK);
+            y += 20;
+          }
+        }
     }
-
-    y += 10; // space between pools
+    
+    y += 15; // Espacio entre pools
   }
 
+  // Envía el búfer completo a la pantalla
   EPD_Display_Part(0, 0, EPD_W, EPD_H, ImageBW);
+  
+  // Pone la pantalla en modo de bajo consumo
   EPD_Sleep();
   Serial.println("✅ Done rendering all pools.");
 }
