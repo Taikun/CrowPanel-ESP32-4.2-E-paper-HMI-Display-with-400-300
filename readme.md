@@ -93,7 +93,7 @@ C:\Users\Documents\Arduino\libraries\
 
 |--Eagle_SCH&PCB: Contains **Eagle CAD** schematic (`.sch`) and PCB layout (`.brd`) files. These are used for circuit design and PCB manufacturing.
 
-|--example: Provides example code and projects to demonstrate how to use the hardware and libraries. These examples help users get started quickly.
+|--example: Provides example code and projects to demonstrate how to use the hardware and libraries. These examples help users get started quickly. It now includes demos for OpenWeatherMap and TrueNAS.
 
 |--factory_firmware: Stores pre-compiled factory firmware that can be directly flashed onto the device. This ensures the device runs the default functionality.
 
@@ -116,3 +116,4 @@ C:\Users\Documents\Arduino\libraries\
 ## Create Images
 
 [Image2cpp](https://javl.github.io/image2cpp/)
+
