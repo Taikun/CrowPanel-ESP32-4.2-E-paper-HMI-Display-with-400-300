@@ -6,15 +6,15 @@
 #include "EPD_GUI.h"
 #include "secrets.h"
 
-// --- Constantes y Buffers ---
+// --- Constants and Buffers ---
 #define DOT_PIXEL_1X1 1
 uint8_t ImageBW[15000];
 char buffer[128];
 
-// --- Variables Globales ---
-int paginaActual = 0;
+// --- Global Variables ---
+int currentPage = 0;
 
-// --- Funciones Auxiliares ---
+// --- Helper Functions ---
 void clear_all() {
   EPD_Clear();
   memset(ImageBW, 0xFF, sizeof(ImageBW));
@@ -31,10 +31,10 @@ String httpGETTrueNAS(String endpoint) {
   https.addHeader("Authorization", "Bearer " + String(TRUENAS_API_KEY));
   
   int httpResponseCode = https.GET();
-  String payload = ""; // Devolvemos vacío en caso de error
+  String payload = ""; // Return empty on error
   if (httpResponseCode > 0) {
     payload = https.getString();
-    // Si la respuesta es muy larga, esto puede fallar.
+    // Warn if the payload is very large
     if (payload.length() > 10000) {
       Serial.println("WARN: Payload is very large, potential for memory issues.");
     }
@@ -45,16 +45,16 @@ String httpGETTrueNAS(String endpoint) {
   return payload;
 }
 
-// --- PANTALLA 1: ESTADO DE LOS POOLS ---
-void mostrarPoolsPantalla() {
-  Serial.println("🧭 Mostrando estado de Pools...");
+// --- SCREEN 1: POOL STATUS ---
+void showPoolsScreen() {
+  Serial.println("🧭 Showing pool status...");
   EPD_GPIOInit();
   clear_all(); 
   EPD_Init_Fast(Fast_Seconds_1_5s);
   
   JSONVar pools = JSON.parse(httpGETTrueNAS("pool"));
   if (JSON.typeof(pools) == "undefined") {
-    EPD_ShowString(10, 10, "Error: No se pudo obtener Pools", 16, BLACK);
+    EPD_ShowString(10, 10, "Error: Unable to get Pools", 16, BLACK);
   } else {
     int y = 10;
     for (int i = 0; i < pools.length(); i++) {
@@ -84,23 +84,23 @@ void mostrarPoolsPantalla() {
   
   EPD_Display_Part(0, 0, EPD_W, EPD_H, ImageBW);
   EPD_Sleep();
-  Serial.println("✅ Fin de renderizado de Pools.");
+  Serial.println("✅ Finished rendering Pools.");
 }
 
-// --- PANTALLA 2: ALERTAS ACTIVAS ---
-void mostrarAlertas() {
-  Serial.println("🚨 Mostrando Alertas Activas...");
+// --- SCREEN 2: ACTIVE ALERTS ---
+void showAlerts() {
+  Serial.println("🚨 Showing active alerts...");
   EPD_GPIOInit();
   clear_all(); 
   EPD_Init_Fast(Fast_Seconds_1_5s);
   
   String jsonAlerts = httpGETTrueNAS("alert/list");
   if (jsonAlerts == "") {
-      EPD_ShowString(10, 10, "Error: No se pudo obtener Alertas", 16, BLACK);
+      EPD_ShowString(10, 10, "Error: Unable to get Alerts", 16, BLACK);
   } else {
     JSONVar alerts = JSON.parse(jsonAlerts);
     if (JSON.typeof(alerts) == "undefined") {
-      EPD_ShowString(10, 10, "Error: Fallo al parsear Alertas", 16, BLACK);
+      EPD_ShowString(10, 10, "Error parsing Alerts", 16, BLACK);
     } else {
       EPD_ShowString(10, 10, "--- Active Alerts ---", 24, BLACK);
       int y = 50, activeAlertCount = 0;
@@ -124,24 +124,24 @@ void mostrarAlertas() {
 
   EPD_Display_Part(0, 0, EPD_W, EPD_H, ImageBW);
   EPD_Sleep();
-  Serial.println("✅ Fin de renderizado de Alertas.");
+  Serial.println("✅ Finished rendering Alerts.");
 }
 
-void mostrarSystemInfo() {
-  Serial.println("ℹ️ Mostrando Info del Sistema (Modo Depuración)...");
+void showSystemInfo() {
+  Serial.println("ℹ️ Displaying System Info (debug mode)...");
   EPD_GPIOInit();
   clear_all(); 
   EPD_Init_Fast(Fast_Seconds_1_5s);
 
-  // 1. Obtener /system/info para carga CPU y total RAM
+  // 1. Get /system/info for CPU load and total RAM
   String jsonInfo = httpGETTrueNAS("system/info");
   if (jsonInfo == "") {
-    EPD_ShowString(10, 10, "Error al obtener SysInfo", 16, BLACK);
+    EPD_ShowString(10, 10, "Error getting SysInfo", 16, BLACK);
     return;
   }
   JSONVar sysInfo = JSON.parse(jsonInfo);
   if (JSON.typeof(sysInfo) == "undefined") {
-    EPD_ShowString(10, 10, "Error al parsear SysInfo", 16, BLACK);
+    EPD_ShowString(10, 10, "Error parsing SysInfo", 16, BLACK);
     return;
   }
 
@@ -164,9 +164,9 @@ void mostrarSystemInfo() {
   String body = "{\"graphs\": [{\"name\": \"memory\"}]}";
 
   int code = https.POST(body);
-  Serial.printf("[DEBUG] Código HTTP: %d\n", code);
+  Serial.printf("[DEBUG] HTTP code: %d\n", code);
   if (code <= 0) {
-    snprintf(buffer, sizeof(buffer), "Error HTTP memoria: %d", code);
+    snprintf(buffer, sizeof(buffer), "HTTP error memory: %d", code);
     EPD_ShowString(10, 80, buffer, 16, BLACK);
     https.end();
     return;
@@ -176,7 +176,7 @@ void mostrarSystemInfo() {
   https.end();
   JSONVar memJson = JSON.parse(payload);
   if (JSON.typeof(memJson) == "undefined" || memJson.length() == 0) {
-    EPD_ShowString(10, 80, "Error al parsear memoria", 16, BLACK);
+    EPD_ShowString(10, 80, "Error parsing memory", 16, BLACK);
     return;
   }
 
@@ -184,12 +184,12 @@ void mostrarSystemInfo() {
   JSONVar mean = aggregations["mean"];
   double mem_free = (double)mean["available"];
 
-  // 3. Cálculo de uso
+  // 3. Usage calculation
   double mem_used = total_mem_bytes - mem_free;
   double mem_used_gb = mem_used / 1024.0 / 1024.0 / 1024.0;
   double mem_percent = (mem_used / total_mem_bytes) * 100.0;
 
-  // 4. Mostrar en pantalla
+  // 4. Display on screen
   EPD_ShowString(10, 10, "--- System Status ---", 24, BLACK);
   snprintf(buffer, sizeof(buffer), "Load CPU: %.2f %.2f %.2f", load1, load5, load15);
   EPD_ShowString(10, 50, buffer, 16, BLACK);
@@ -197,7 +197,7 @@ void mostrarSystemInfo() {
   snprintf(buffer, sizeof(buffer), "RAM: %.1f/%.1f GB (%.0f%%)", mem_used_gb, total_mem_gb, mem_percent);
   EPD_ShowString(10, 80, buffer, 16, BLACK);
 
-  // Barra de RAM
+  // RAM usage bar
   int barraX = 10, barraY = 110, barraW = 360, barraH = 15;
   int barraUsadaW = (int)(barraW * (mem_percent / 100.0));
   EPD_DrawRectangle(barraX, barraY, barraX + barraW, barraY + barraH, BLACK, 0);
@@ -210,21 +210,21 @@ void mostrarSystemInfo() {
 
   EPD_Display_Part(0, 0, EPD_W, EPD_H, ImageBW);
   EPD_Sleep();
-  Serial.println("✅ Fin de renderizado de SysInfo.");
+  Serial.println("✅ Finished rendering SysInfo.");
 }
 
 // --- SETUP Y LOOP PRINCIPAL ---
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("📶 Iniciando conexión WiFi...");
+  Serial.println("📶 Starting WiFi connection...");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\n✅ Conectado a WiFi.");
+  Serial.println("\n✅ Connected to WiFi.");
   Serial.println(WiFi.localIP());
 
   pinMode(7, OUTPUT);
@@ -232,23 +232,23 @@ void setup() {
 }
 
 void loop() {
-  switch (paginaActual) {
+  switch (currentPage) {
     case 0:
-      mostrarPoolsPantalla();
+      showPoolsScreen();
       break;
     case 1:
-      mostrarAlertas();
+      showAlerts();
       break;
     case 2:
-      mostrarSystemInfo();
+      showSystemInfo();
       break;
   }
 
-  paginaActual++;
-  if (paginaActual > 2) { // 3 páginas (0, 1, 2)
-    paginaActual = 0;
+  currentPage++;
+  if (currentPage > 2) { // 3 pages (0, 1, 2)
+    currentPage = 0;
   }
   
-  Serial.printf("Durmiendo 5 minutos antes de mostrar la página %d...\n", paginaActual);
+  Serial.printf("Sleeping 5 minutes before showing page %d...\n", currentPage);
   delay(1000 * 60 * 5);
 }
