@@ -5,6 +5,7 @@
 #include "EPD.h"
 #include "EPD_GUI.h"
 #include "secrets.h"
+#include "pic.h"
 
 // --- Constants and Buffers ---
 #define DOT_PIXEL_1X1 1
@@ -118,7 +119,12 @@ void showAlerts() {
           if (y > (EPD_H - 30)) { EPD_ShowString(10, y, "...", 16, BLACK); break; }
         }
       }
-      if (activeAlertCount == 0) EPD_ShowString(10, y, "✅ No active critical alerts.", 24, BLACK);
+      if (activeAlertCount == 0) {
+        int iconX = 10;
+        int iconY = y;
+        EPD_ShowPicture(iconX, iconY + 4, 24, 24, epd_bitmap_ok_24, BLACK);
+        EPD_ShowString(iconX + 28, iconY + 4, "No active critical alerts.", 24, BLACK);
+      }
     }
   }
 
