@@ -133,6 +133,7 @@ void showAlerts() {
   Serial.println("✅ Finished rendering Alerts.");
 }
 
+// --- SCREEN 3: SYSTEM INFO ---
 void showSystemInfo() {
   Serial.println("ℹ️ Displaying System Info (debug mode)...");
   EPD_GPIOInit();
@@ -255,6 +256,6 @@ void loop() {
     currentPage = 0;
   }
   
-  Serial.printf("Sleeping 5 minutes before showing page %d...\n", currentPage);
-  delay(1000 * 60 * 5);
+  Serial.printf("Sleeping 20 minutes before showing page %d...\n", currentPage);
+  delay(1000 * 60 * 20);
 }
